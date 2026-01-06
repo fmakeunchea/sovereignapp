@@ -39,11 +39,11 @@ import { RouterLink } from '@angular/router';
           </p>
 
           <div class="flex flex-col sm:flex-row gap-4 mb-16">
-            <button routerLink="/pricing" class="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold transition-all shadow-[0_0_25px_rgba(37,99,235,0.25)] hover:shadow-[0_0_35px_rgba(37,99,235,0.4)] text-base md:text-lg flex items-center justify-center gap-2">
+            <button routerLink="/pricing" class="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold transition-all shadow-[0_0_25px_rgba(37,99,235,0.25)] hover:shadow-[0_0_35px_rgba(37,99,235,0.4)] text-base md:text-lg flex items-center justify-center gap-2 active:scale-95 duration-200">
               View Architecture Tiers
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
             </button>
-            <button routerLink="/calculator" class="px-8 py-4 bg-transparent border border-zinc-700 hover:border-zinc-500 text-zinc-300 rounded font-bold transition-all text-base md:text-lg hover:bg-zinc-900 hover:text-white">
+            <button routerLink="/calculator" class="px-8 py-4 bg-transparent border border-zinc-700 hover:border-zinc-500 text-zinc-300 rounded font-bold transition-all text-base md:text-lg hover:bg-zinc-900 hover:text-white active:scale-95 duration-200">
               Calculate Savings
             </button>
           </div>
@@ -76,11 +76,28 @@ import { RouterLink } from '@angular/router';
       <div class="w-full border-t border-zinc-800 bg-zinc-950/80 backdrop-blur-sm py-8">
         <div class="container mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6 text-zinc-500 text-[10px] font-mono uppercase tracking-widest">
           <span>Trusted by High-Scale Teams</span>
-          <div class="flex flex-wrap justify-center gap-8 md:gap-12 opacity-60 grayscale hover:grayscale-0 transition-all duration-500">
-             <span class="font-bold text-white tracking-tighter text-lg flex items-center gap-1"><div class="w-4 h-4 bg-zinc-700 rounded-sm"></div>ACME<span class="text-blue-500">CORP</span></span>
-             <span class="font-bold text-white tracking-tighter text-lg flex items-center gap-1"><div class="w-4 h-4 bg-zinc-700 rounded-full"></div>NEXUS<span class="text-blue-500">AI</span></span>
-             <span class="font-bold text-white tracking-tighter text-lg flex items-center gap-1"><div class="w-4 h-4 bg-zinc-700 rotate-45"></div>STRAT<span class="text-blue-500">OS</span></span>
-             <span class="font-bold text-white tracking-tighter text-lg flex items-center gap-1"><div class="w-4 h-4 bg-zinc-700 rounded-tr-lg"></div>HYPER<span class="text-blue-500">SCALE</span></span>
+          <div class="flex flex-wrap justify-center gap-8 md:gap-16 opacity-40 grayscale hover:grayscale-0 transition-all duration-700">
+             <!-- Abstract Tech Logos -->
+             <svg class="h-6 w-auto text-white" viewBox="0 0 100 30" fill="currentColor">
+               <circle cx="15" cy="15" r="10" />
+               <rect x="35" y="5" width="20" height="20" rx="5" />
+               <path d="M70 15 L85 5 L85 25 Z" />
+             </svg>
+             <svg class="h-6 w-auto text-white" viewBox="0 0 100 30" fill="currentColor">
+               <path d="M10 5 L30 5 L20 25 Z" />
+               <circle cx="50" cy="15" r="8" />
+               <rect x="75" y="10" width="20" height="10" />
+             </svg>
+              <svg class="h-6 w-auto text-white" viewBox="0 0 100 30" fill="currentColor">
+               <rect x="10" y="5" width="10" height="20" />
+               <rect x="25" y="5" width="10" height="20" />
+               <path d="M50 5 L70 15 L50 25 Z" />
+               <circle cx="90" cy="15" r="5" />
+             </svg>
+             <svg class="h-6 w-auto text-white" viewBox="0 0 100 30" fill="currentColor">
+               <path d="M10 15 Q 25 5 40 15 T 70 15" stroke="currentColor" stroke-width="4" fill="none" />
+               <circle cx="85" cy="15" r="8" />
+             </svg>
           </div>
         </div>
       </div>

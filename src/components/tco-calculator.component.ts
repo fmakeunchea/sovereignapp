@@ -1,12 +1,11 @@
 
-import { Component, ElementRef, ViewChild, effect, inject, signal, computed } from '@angular/core';
+import { Component, ElementRef, ViewChild, effect, inject, signal, computed, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RoiService } from '../services/roi.service';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-
-declare const d3: any;
+import * as d3 from 'd3';
 
 @Component({
   selector: 'app-tco-calculator',
@@ -49,7 +48,7 @@ declare const d3: any;
                       type="number" 
                       [ngModel]="tasks()" 
                       (ngModelChange)="updateTasks($event)"
-                      class="w-full bg-zinc-950 border border-zinc-700 rounded p-3 text-white focus:border-blue-500 outline-none font-mono"
+                      class="w-full bg-zinc-950 border border-zinc-700 rounded p-3 text-white focus:border-blue-500 outline-none font-mono transition-colors"
                     >
                   </div>
                   <input 
@@ -74,7 +73,7 @@ declare const d3: any;
                       type="number" 
                       [ngModel]="growth()" 
                       (ngModelChange)="updateGrowth($event)"
-                      class="w-full bg-zinc-950 border border-zinc-700 rounded p-3 text-white focus:border-blue-500 outline-none font-mono"
+                      class="w-full bg-zinc-950 border border-zinc-700 rounded p-3 text-white focus:border-blue-500 outline-none font-mono transition-colors"
                     >
                     <span class="text-zinc-500">%</span>
                   </div>
@@ -90,7 +89,7 @@ declare const d3: any;
               </div>
 
               <!-- Result Box -->
-              <div class="mt-8 p-6 bg-gradient-to-br from-zinc-900 to-zinc-950 rounded-lg border border-zinc-700 shadow-inner relative">
+              <div class="mt-8 p-6 bg-gradient-to-br from-zinc-900 to-zinc-950 rounded-lg border border-zinc-700 shadow-inner relative overflow-hidden">
                 <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
                 <div class="text-zinc-400 text-xs font-mono uppercase tracking-widest mb-1">36-Month Net Gain</div>
                 
@@ -103,9 +102,9 @@ declare const d3: any;
                      Break-even: <span class="text-white font-bold">Month {{ roiService.breakEvenMonth() ?? 'N/A' }}</span>
                    </div>
                    
-                   <button (click)="downloadPdf()" class="text-xs flex items-center gap-1 text-blue-400 hover:text-blue-300 font-bold uppercase tracking-wider transition-colors">
+                   <button (click)="downloadPdf()" class="text-xs flex items-center gap-1 text-blue-400 hover:text-blue-300 font-bold uppercase tracking-wider transition-colors disabled:opacity-50" [disabled]="isGeneratingPdf()">
                      <span *ngIf="!isGeneratingPdf()">Download Report</span>
-                     <span *ngIf="isGeneratingPdf()">Generating...</span>
+                     <span *ngIf="isGeneratingPdf()">Processing...</span>
                      <svg *ngIf="!isGeneratingPdf()" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                    </button>
                 </div>
@@ -132,7 +131,7 @@ declare const d3: any;
                   </div>
                </div>
                
-               <div class="flex-grow bg-zinc-950 rounded border border-zinc-800 relative shadow-inner min-h-[400px]" #chartContainer></div>
+               <div class="flex-grow bg-zinc-950 rounded border border-zinc-800 relative shadow-inner min-h-[400px] w-full" #chartContainer></div>
             </div>
           </div>
         </div>
@@ -148,7 +147,7 @@ declare const d3: any;
     @keyframes bounceIn { 0% { opacity: 0; transform: scale(0.3); } 50% { opacity: 1; transform: scale(1.05); } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }
   `]
 })
-export class TcoCalculatorComponent {
+export class TcoCalculatorComponent implements AfterViewInit, OnDestroy {
   @ViewChild('chartContainer') chartContainer!: ElementRef;
   roiService = inject(RoiService);
 
@@ -159,11 +158,33 @@ export class TcoCalculatorComponent {
   // Scarcity Logic: If they save > $50k, they are a "High Value" prospect
   isHighValue = computed(() => this.roiService.totalSavings() > 50000);
 
+  private resizeObserver: ResizeObserver | null = null;
+
   constructor() {
     effect(() => {
       const data = this.roiService.chartData();
-      this.renderChart(data);
+      // Render immediately if container exists
+      if (this.chartContainer) {
+        this.renderChart(data);
+      }
     });
+  }
+
+  ngAfterViewInit() {
+    // Add resize observer to make chart responsive
+    this.resizeObserver = new ResizeObserver(() => {
+      // Debounce slightly or just render
+      requestAnimationFrame(() => {
+         this.renderChart(this.roiService.chartData());
+      });
+    });
+    this.resizeObserver.observe(this.chartContainer.nativeElement);
+  }
+
+  ngOnDestroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+    }
   }
 
   updateTasks(val: number) {
@@ -193,7 +214,8 @@ export class TcoCalculatorComponent {
       const canvas = await html2canvas(element, {
         scale: 2,
         backgroundColor: '#09090b', // Match bg
-        logging: false
+        logging: false,
+        useCORS: true // Handle images if any
       });
 
       const imgData = canvas.toDataURL('image/png');
@@ -210,6 +232,7 @@ export class TcoCalculatorComponent {
       pdf.save(`Sovereign_TCO_Report_${date}.pdf`);
     } catch (error) {
       console.error('PDF Gen Error', error);
+      alert('Failed to generate PDF. Please verify your browser settings.');
     } finally {
       this.isGeneratingPdf.set(false);
     }
@@ -219,16 +242,23 @@ export class TcoCalculatorComponent {
     if (!this.chartContainer) return;
     
     const element = this.chartContainer.nativeElement;
+    // Clear previous
     d3.select(element).selectAll("*").remove();
+    
+    // Get dimensions dynamically
+    const containerWidth = element.clientWidth || 600; 
+    const containerHeight = element.clientHeight || 400;
 
     const margin = { top: 30, right: 40, bottom: 30, left: 60 };
-    const width = element.clientWidth - margin.left - margin.right;
-    const height = element.clientHeight - margin.top - margin.bottom;
+    const width = containerWidth - margin.left - margin.right;
+    const height = containerHeight - margin.top - margin.bottom;
+
+    if (width <= 0 || height <= 0) return; // Prevent d3 errors on hidden/small containers
 
     const svg = d3.select(element)
       .append("svg")
-      .attr("width", width + margin.left + margin.right)
-      .attr("height", height + margin.top + margin.bottom)
+      .attr("width", containerWidth)
+      .attr("height", containerHeight)
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 

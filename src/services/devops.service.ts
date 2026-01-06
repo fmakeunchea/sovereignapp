@@ -1,6 +1,6 @@
 
 import { Injectable, signal } from '@angular/core';
-import { delay, of } from 'rxjs';
+import { GoogleGenAI } from "@google/genai";
 
 export interface AssistantMessage {
   id: string;
@@ -21,8 +21,9 @@ export interface AssistantMessage {
   providedIn: 'root'
 })
 export class DevOpsService {
-  // In a real app, this URL points to your n8n webhook
-  private readonly N8N_WEBHOOK_URL = 'https://n8n.your-domain.com/webhook/devops-assistant';
+  // Initialize Gemini Client
+  // Note: In a real deployment, ensure process.env.API_KEY is populated via your build system or environment
+  private ai = new GoogleGenAI({ apiKey: process.env['API_KEY'] });
 
   messages = signal<AssistantMessage[]>([
     {
@@ -36,8 +37,38 @@ export class DevOpsService {
 
   isLoading = signal(false);
 
+  // System Prompt to define the AI's behavior and JSON schema
+  private readonly SYSTEM_INSTRUCTION = `
+    You are a Sovereign Infra Architect AI (SRE) managing a high-scale AWS environment.
+    Your goal is to assist the user with DevOps tasks, debugging, and infrastructure scaling.
+    
+    CRITICAL: You must ALWAYS respond with a valid JSON object. Do not wrap it in markdown code blocks.
+    
+    The JSON object must follow this schema:
+    {
+      "content": "The main text response to the user",
+      "type": "text" | "analysis" | "approval_request" | "execution_log",
+      "meta": {
+        "riskLevel": "LOW" | "MEDIUM" | "HIGH" (optional, for approval_request),
+        "resourceId": "string" (optional, e.g., i-12345),
+        "actionType": "string" (optional, e.g., aws:ec2:StopInstances),
+        "costImpact": "string" (optional, e.g., +$0.50/hr),
+        "status": "PENDING" (always PENDING for new requests)
+      }
+    }
+
+    Logic for "type":
+    - Use "text" for general chat or questions.
+    - Use "analysis" when explaining a root cause of a bug or infrastructure issue.
+    - Use "approval_request" when the user asks to perform an action (scale, restart, deploy, delete).
+    - Use "execution_log" ONLY when showing raw logs or code output.
+
+    Tone: Professional, concise, "hacker" aesthetic.
+    Context: The user is running a SaaS on AWS with EKS, RDS, and Redis.
+  `;
+
   async sendCommand(command: string) {
-    // 1. Add User Message
+    // 1. Add User Message to UI
     this.addMessage({
       role: 'user',
       content: command,
@@ -46,12 +77,52 @@ export class DevOpsService {
 
     this.isLoading.set(true);
 
-    // 2. Simulate Network/LLM Latency (Mocking n8n response)
-    // In production, use: await fetch(this.N8N_WEBHOOK_URL, { method: 'POST', body: JSON.stringify({ command }) ... })
-    setTimeout(() => {
-      this.handleMockResponse(command);
+    try {
+      // 2. Prepare History for Context
+      const history = this.messages().map(m => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.content }]
+      }));
+
+      // 3. Call Gemini
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          ...history,
+          { role: 'user', parts: [{ text: command }] }
+        ],
+        config: {
+          systemInstruction: this.SYSTEM_INSTRUCTION,
+          responseMimeType: 'application/json',
+          // Thinking budget optional for speed, removing to ensure fast response for UI demo
+          // thinkingConfig: { thinkingBudget: 0 } 
+        }
+      });
+
+      const responseText = response.text;
+      
+      if (responseText) {
+        const parsedData = JSON.parse(responseText);
+        
+        // 4. Add AI Response to UI
+        this.addMessage({
+          role: 'assistant',
+          content: parsedData.content,
+          type: parsedData.type,
+          meta: parsedData.meta
+        });
+      }
+
+    } catch (error) {
+      console.error('Gemini API Error:', error);
+      this.addMessage({
+        role: 'system',
+        content: 'Error connecting to Control Plane (Gemini API). Please check your API Key configuration.',
+        type: 'text'
+      });
+    } finally {
       this.isLoading.set(false);
-    }, 1500);
+    }
   }
 
   approveAction(messageId: string) {
@@ -61,14 +132,14 @@ export class DevOpsService {
       )
     );
     
-    // Simulate Execution
+    // Simulate Execution of the approved action
     setTimeout(() => {
       this.addMessage({
         role: 'system',
-        content: `> Executing Change Set via Terraform Cloud...\n> AWS API: rds:RebootDBInstance\n> Success: Resource restarting.`,
+        content: `> Initiating Terraform State Lock...\n> Applying Change Set: ${Math.random().toString(16).substring(2,8)}\n> AWS API Response: 200 OK\n> Resource state updated.`,
         type: 'execution_log'
       });
-    }, 1000);
+    }, 800);
   }
 
   denyAction(messageId: string) {
@@ -80,7 +151,7 @@ export class DevOpsService {
     
     this.addMessage({
       role: 'assistant',
-      content: 'Action cancelled by user. No changes applied to infrastructure.',
+      content: 'Operation aborted by user. State rollbacked.',
       type: 'text'
     });
   }
@@ -94,74 +165,5 @@ export class DevOpsService {
       type: msg.type || 'text',
       meta: msg.meta
     }]);
-  }
-
-  // MOCK LOGIC: Matches user intent to demonstrate UI capabilities
-  private handleMockResponse(command: string) {
-    const cmd = command.toLowerCase();
-
-    if (cmd.includes('cpu') || cmd.includes('alarm')) {
-      this.addMessage({
-        role: 'assistant',
-        content: 'Analysis: CloudWatch Alarm "HighCPU" triggered on instance i-0123456789abcdef0.',
-        type: 'analysis',
-        meta: { riskLevel: 'LOW' }
-      });
-      this.addMessage({
-        role: 'assistant',
-        content: 'Recommended Action: Scale Auto-Scaling Group max_capacity from 4 to 8 to handle surge.',
-        type: 'approval_request',
-        meta: {
-          riskLevel: 'MEDIUM',
-          resourceId: 'asg-prod-worker-v2',
-          actionType: 'aws:autoscaling:UpdateAutoScalingGroup',
-          costImpact: '+$45.00/day estimated',
-          status: 'PENDING'
-        }
-      });
-    } else if (cmd.includes('fail') || cmd.includes('pipeline')) {
-      this.addMessage({
-        role: 'assistant',
-        content: 'Investigating CircleCI build #4201... \n\nError found in integration tests: "Connection refused: 5432". The RDS Proxy seems to be enforcing connection limits.',
-        type: 'analysis'
-      });
-       this.addMessage({
-        role: 'assistant',
-        content: 'Would you like to flush existing connections on the RDS Proxy target group?',
-        type: 'approval_request',
-        meta: {
-          riskLevel: 'HIGH',
-          resourceId: 'proxy-prod-db',
-          actionType: 'aws:rds:DeregisterDBProxyTargets',
-          costImpact: '$0.00',
-          status: 'PENDING'
-        }
-      });
-    } else if (cmd.includes('cost') || cmd.includes('bill')) {
-       this.addMessage({
-        role: 'assistant',
-        content: 'Cost Anomaly Detected: ElasticSearch Service usage spiked 40% yesterday ($120).',
-        type: 'analysis',
-        meta: { riskLevel: 'LOW' }
-      });
-      this.addMessage({
-        role: 'assistant',
-        content: 'I can apply a curated Lifecycle Policy to move indices older than 7 days to UltraWarm storage.',
-        type: 'approval_request',
-        meta: {
-          riskLevel: 'LOW',
-          resourceId: 'es-domain-logging',
-          actionType: 'es:PutLifecyclePolicy',
-          costImpact: '-$800.00/mo estimated',
-          status: 'PENDING'
-        }
-      });
-    } else {
-      this.addMessage({
-        role: 'assistant',
-        content: 'I can help you with CloudWatch alarms, CI/CD failures, or Cost Anomalies. Try asking "Why is CPU high?" or "Check pipeline failures".',
-        type: 'text'
-      });
-    }
   }
 }
